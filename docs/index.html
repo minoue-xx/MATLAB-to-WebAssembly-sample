@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Passing Data</title>
+</head>
+
+<body>
+    <script async type="text/javascript" src="optimizeposition.js"></script>
+    <script>
+        // JavaScript Array to Emscripten Heap
+        function _arrayToHeap(typedArray) {
+            var numBytes = typedArray.length * typedArray.BYTES_PER_ELEMENT;
+            var ptr = Module._malloc(numBytes);
+            var heapBytes = new Uint8Array(Module.HEAPU8.buffer, ptr, numBytes);
+            heapBytes.set(new Uint8Array(typedArray.buffer));
+            return heapBytes;
+        }
+        // Emscripten Heap to JavasSript Array
+        function _heapToArray(heapBytes, array) {
+            return new Float64Array(
+                heapBytes.buffer,
+                heapBytes.byteOffset,
+                heapBytes.length / array.BYTES_PER_ELEMENT);
+        }
+        // Free Heap
+        function _freeArray(heapBytes) {
+            Module._free(heapBytes.byteOffset);
+        }
+        // Example of Passing Data Arrays
+        var Module = {
+            onRuntimeInitialized: function () {
+                var target_pf = [0.275, 0.125, 0.2, 0.1, 0.1, 0.15, 0.05, 0, 0, 0];
+                var price = [155.83, 90.4, 42.78, 42.50, 142.56, 112.93, 39.23, 0, 0, 0];
+                var position = [12, 20, 40, 15, 6, 18, 12, 0, 0, 0];
+                // Create Data    
+                var Target_pf = new Float64Array(target_pf);
+                var Price = new Float64Array(price);
+                var Position = new Float64Array(position);
+                var Position2Add = new Float64Array(10);
+                // Move Data to Heap
+                var Target_pfbytes = _arrayToHeap(Target_pf);
+                var Pricebytes = _arrayToHeap(Price);
+                var Positionbytes = _arrayToHeap(Position);
+                var Position2Addbytes = _arrayToHeap(Position2Add);
+                // Run Function
+                Module._optimizeposition_initialize();
+                Module._getPosition2Add(Target_pfbytes.byteOffset, Pricebytes.byteOffset, Positionbytes.byteOffset, Position2Addbytes.byteOffset)
+                Module._optimizeposition_terminate();
+                //  Copy Data from Heap
+                Position2Add = _heapToArray(Position2Addbytes, Position2Add);
+                var position2add = Array.from(Position2Add);
+                // Free Data from Heap
+                _freeArray(Target_pfbytes);
+                _freeArray(Pricebytes);
+                _freeArray(Positionbytes);
+                _freeArray(Position2Addbytes);
+                // Display Results
+                console.log("Original Position: " + Position);
+                console.log("Position to add: " + position2add);
+            }
+        };
+    </script>
+</body>
+
+</html>
