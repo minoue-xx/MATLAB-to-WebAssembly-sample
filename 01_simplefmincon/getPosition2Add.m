@@ -1,4 +1,7 @@
+
 function xlong = getPosition2Add(target_pf, price, position)
+%-------------------------------------------------------------------------
+% Copyright (c) 2019 Michio Inoue
 
 % Specify the Dimensions and Data Types
 assert(isa(target_pf, 'double'));
