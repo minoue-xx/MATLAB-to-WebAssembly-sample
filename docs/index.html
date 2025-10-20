@@ -1,72 +1,85 @@
 <!--
 Copyright (c) 2019 Michio Inoue
 -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Rebalancing Portofolio (Under Development)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Index — Demos Home</title>
+  <style>
+    :root{ --bg:#0f1724; --card:#0b1220; --muted:#9aa4b2; --accent:#7dd3fc }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;color:#e6eef6;background:linear-gradient(180deg,#071024 0%, #071a2a 60%)}
+    .wrap{max-width:1100px;margin:48px auto;padding:24px}
+    header{display:flex;align-items:center;gap:16px}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#60a5fa);display:flex;align-items:center;justify-content:center;font-weight:700;color:#032;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    h1{margin:0;font-size:20px}
+    p.lead{color:var(--muted);margin:6px 0 28px}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+    .card{background:var(--card);border-radius:12px;padding:18px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 8px 30px rgba(2,6,23,0.6);transition:transform .18s ease,box-shadow .18s ease}
+    .card:hover{transform:translateY(-6px);box-shadow:0 18px 45px rgba(2,6,23,0.7)}
+    .card h2{margin:0 0 8px;font-size:16px}
+    .meta{color:var(--muted);font-size:13px;margin-bottom:12px}
+    .actions{display:flex;gap:8px;align-items:center}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.04);color:#eaf6ff;text-decoration:none;font-weight:600}
+    .btn.secondary{opacity:0.9;background:transparent;border:1px dashed rgba(255,255,255,0.03);color:var(--muted);font-weight:600}
+    footer{margin-top:28px;color:var(--muted);font-size:13px}
+
+    .tag{display:inline-block;padding:6px 8px;border-radius:999px;background:rgba(125,211,252,0.08);color:var(--accent);font-weight:700;font-size:12px}
+
+    @media (max-width:520px){.wrap{margin:20px;padding:16px}}
+  </style>
 </head>
-
 <body>
-    <script async type="text/javascript" src="optimizeposition.js"></script>
-    <script>
-        // JavaScript Array to Emscripten Heap
-        function _arrayToHeap(typedArray) {
-            var numBytes = typedArray.length * typedArray.BYTES_PER_ELEMENT;
-            var ptr = Module._malloc(numBytes);
-            var heapBytes = new Uint8Array(Module.HEAPU8.buffer, ptr, numBytes);
-            heapBytes.set(new Uint8Array(typedArray.buffer));
-            return heapBytes;
-        }
-        // Emscripten Heap to JavasSript Array
-        function _heapToArray(heapBytes, array) {
-            return new Float64Array(
-                heapBytes.buffer,
-                heapBytes.byteOffset,
-                heapBytes.length / array.BYTES_PER_ELEMENT);
-        }
-        // Free Heap
-        function _freeArray(heapBytes) {
-            Module._free(heapBytes.byteOffset);
-        }
-        // Example of Passing Data Arrays
-        var Module = {
-            onRuntimeInitialized: function () {
-                var target_pf = [0.275, 0.125, 0.2, 0.1, 0.1, 0.15, 0.05, 0, 0, 0];
-                var price = [155.83, 90.4, 42.78, 42.50, 142.56, 112.93, 39.23, 0, 0, 0];
-                var position = [12, 20, 40, 15, 6, 18, 12, 0, 0, 0];
-                // Create Data    
-                var Target_pf = new Float64Array(target_pf);
-                var Price = new Float64Array(price);
-                var Position = new Float64Array(position);
-                var Position2Add = new Float64Array(10);
-                // Move Data to Heap
-                var Target_pfbytes = _arrayToHeap(Target_pf);
-                var Pricebytes = _arrayToHeap(Price);
-                var Positionbytes = _arrayToHeap(Position);
-                var Position2Addbytes = _arrayToHeap(Position2Add);
-                // Run Function
-                Module._optimizeposition_initialize();
-                Module._getPosition2Add(Target_pfbytes.byteOffset, Pricebytes.byteOffset, Positionbytes.byteOffset, Position2Addbytes.byteOffset)
-                Module._optimizeposition_terminate();
-                //  Copy Data from Heap
-                Position2Add = _heapToArray(Position2Addbytes, Position2Add);
-                var position2add = Array.from(Position2Add);
-                // Free Data from Heap
-                _freeArray(Target_pfbytes);
-                _freeArray(Pricebytes);
-                _freeArray(Positionbytes);
-                _freeArray(Position2Addbytes);
-                // Display Results
-                console.log("Original Position: " + Position);
-                console.log("Position to add: " + position2add);
-            }
-        };
-    </script>
-</body>
+  <div class="wrap">
+    <header>
+      <div class="logo">WG</div>
+      <div>
+        <h1>Demo Index</h1>
+        <p class="lead">Quick entry point for the two demo pages you mentioned. Click a card to open each demo in the same folder.</p>
+      </div>
+    </header>
 
+    <div class="grid" role="list">
+
+      <article class="card" role="listitem" aria-labelledby="wave-title">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <h2 id="wave-title">2D Wave Simulation: JS vs WASM</h2>
+            <div class="meta">Interactive wave equation demo comparing JS and WebAssembly implementations.</div>
+          </div>
+          <div class="tag">Physics</div>
+        </div>
+        <p style="color:var(--muted);margin:0 0 12px">Run the simulation, toggle parameters, and compare render performance between JS and WASM builds.</p>
+        <div class="actions">
+          <a class="btn" href="waveEquation.html">Open demo</a>
+          <a class="btn secondary" href="waveEquation.html#notes">Notes</a>
+        </div>
+      </article>
+
+      <article class="card" role="listitem" aria-labelledby="opt-title">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <h2 id="opt-title">Rebalancing Portfoloio (Under Development)</h2>
+            <div class="meta">A work-in-progress UI for testing portfolio rebalancing strategies.</div>
+          </div>
+          <div class="tag">Finance</div>
+        </div>
+        <p style="color:var(--muted);margin:0 0 12px">Experiment with allocation rules, transaction costs, and visualization of rebalancing events.</p>
+        <div class="actions">
+          <a class="btn" href="optimizePosition.html">Open tool</a>
+          <a class="btn secondary" href="optimizePosition.html#dev">Developer notes</a>
+        </div>
+      </article>
+
+    </div>
+
+    <footer>
+      <div>Files assumed to be in the same folder: <strong>waveEquation.html</strong> and <strong>optimizePosition.html</strong>.</div>
+      <div style="margin-top:6px">Want a different layout, thumbnails, or a short README included? Tell me and I'll update the file.</div>
+    </footer>
+  </div>
+</body>
 </html>

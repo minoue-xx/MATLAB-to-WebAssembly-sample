@@ -1,0 +1,294 @@
+<!--
+Copyright (c) 2019 Michio Inoue
+-->
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <title>2D Wave Simulation: JS vs WASM</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: sans-serif;
+      text-align: center;
+    }
+
+    canvas {
+      border: 1px solid #444;
+      image-rendering: pixelated;
+      margin: 10px;
+    }
+
+    button {
+      padding: 6px 12px;
+      margin: 5px;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #555;
+    }
+
+    .info {
+      font-size: 14px;
+      color: #ccc;
+    }
+
+    .sim-container {
+      display: inline-block;
+      margin: 10px;
+      vertical-align: top;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>2D Wave Simulation: JS vs WASM</h2>
+
+  <div class="sim-container">
+    <h3>JS</h3>
+    <canvas id="canvasJS"></canvas><br>
+    <button id="resetJS">🔄 Reset</button>
+    <button id="stopJS">⏸️ Stop</button>
+    <div class="info">Time: <span id="timeJS">0.0</span> ms</div>
+  </div>
+
+  <div class="sim-container">
+    <h3>WASM</h3>
+    <canvas id="canvasWASM"></canvas><br>
+    <button id="resetWASM">🔄 Reset</button>
+    <button id="stopWASM">⏸️ Stop</button>
+    <div class="info">Time: <span id="timeWASM">0.0</span> ms</div>
+  </div>
+
+  <script src="wave2D_step.js"></script> <!-- 非モジュール版 WASM (Module) -->
+
+  <script>
+    // ----------------------
+    // Parameters / setup
+    // ----------------------
+    const nx =600, ny = 600, scale = 0.75
+    const c = 1.1, dx = 0.4, dy = 0.4, dt = 0.25, damping = 0.999 / 0.999;
+
+    // WASM loop interval (ms). 0 だとできるだけ早く連続実行（ただしイベントループに委ねられる）。
+    // setTimeout を小さめにすることで、JS と「同期しにくい」独立した進行になります。
+    let wasmInterval = 0;
+
+    // ----------------------
+    // Canvas helpers
+    // ----------------------
+    function setupCanvas(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      canvas.width = nx; canvas.height = ny;
+      canvas.style.width = (nx * scale) + "px";
+      canvas.style.height = (ny * scale) + "px";
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      const img = ctx.createImageData(nx, ny);
+      return { canvas, ctx, img };
+    }
+    const jsCanvas = setupCanvas("canvasJS");
+    const wasmCanvas = setupCanvas("canvasWASM");
+
+    // ----------------------
+    // JS state & functions
+    // ----------------------
+    function initJSArrays() {
+      const u_prev = new Float64Array(nx * ny);
+      const u      = new Float64Array(nx * ny);
+      const u_next = new Float64Array(nx * ny);
+      const cx = Math.floor(nx / 2), cy = Math.floor(ny / 2);
+      for (let j = -3; j <= 3; j++) {
+        for (let i = -3; i <= 3; i++) {
+          const ii = cx + i, jj = cy + j;
+          if (ii >= 0 && ii < nx && jj >= 0 && jj < ny) {
+            u[ii + jj * nx] = 5*Math.exp(-(i * i + j * j) / 20);
+          }
+        }
+      }
+      return { u_prev, u, u_next };
+    }
+    let jsState = initJSArrays();
+    let jsRunning = true;
+    let jsAnimationId = null;
+
+    function stepJS(u, u_prev, u_next) {
+      const nxm1 = nx - 1, nym1 = ny - 1;
+      const inv_dx2 = 1.0 / (dx * dx), inv_dy2 = 1.0 / (dy * dy);
+      for (let j = 1; j < nym1; j++) {
+        const jnx = j * nx;
+        for (let i = 1; i < nxm1; i++) {
+          const idx = jnx + i;
+          const lap = (u[idx + 1] - 2 * u[idx] + u[idx - 1]) * inv_dx2 +
+            (u[idx + nx] - 2 * u[idx] + u[idx - nx]) * inv_dy2;
+          u_next[idx] = (2 * u[idx] - u_prev[idx] + c * c * dt * dt * lap) * damping;
+        }
+      }
+      // 固定境界
+      for (let i = 0; i < nx; i++) { u_next[i] = 0; u_next[i + (ny - 1) * nx] = 0; }
+      for (let j = 0; j < ny; j++) { u_next[j * nx] = 0; u_next[j * nx + nx - 1] = 0; }
+      return [u_next, u, u_prev]; // new u, new u_prev, new u_next references
+    }
+
+    function drawCanvas(u, img, ctx) {
+      const data = img.data;
+      for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+          const v = u[i + j * nx];
+          const cval = Math.max(0, Math.min(255, Math.floor(128 + 127 * v * 2)));
+          const p = (i + j * nx) * 4;
+          data[p + 0] = cval; data[p + 1] = 150; data[p + 2] = 255 - cval; data[p + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    // ----------------------
+    // WASM state & functions
+    // ----------------------
+    // wasmState will hold emxArray pointers returned by Module._emxCreateND_real_T, etc.
+    let wasmState = { u: null, u_prev: null, u_next: null };
+    let wasmRunning = true;
+    let wasmTimerId = null; // for setTimeout loop
+    let wasmCanvasView = null; // Float64Array view of wasm u data
+
+    function initWasmArrays() {
+      // create temp initial u as Float64Array
+      const temp_u = new Float64Array(nx * ny);
+      const cx = Math.floor(nx / 2), cy = Math.floor(ny / 2);
+      for (let j = -3; j <= 3; j++) {
+        for (let i = -3; i <= 3; i++) {
+          const ii = cx + i, jj = cy + j;
+          if (ii >= 0 && ii < nx && jj >= 0 && jj < ny) {
+            temp_u[ii + jj * nx] = 5*Math.exp(-(i * i + j * j) / 20);
+          }
+        }
+      }
+
+      // If already created, just reset memory contents
+      if (wasmState.u && wasmState.u_prev && wasmState.u_next) {
+        const u_ptr = Module.getValue(wasmState.u, '*');
+        const u_prev_ptr = Module.getValue(wasmState.u_prev, '*');
+        const u_next_ptr = Module.getValue(wasmState.u_next, '*');
+        Module.HEAPF64.set(temp_u, u_ptr / 8);
+        Module.HEAPF64.fill(0, u_prev_ptr / 8, u_prev_ptr / 8 + (nx * ny));
+        Module.HEAPF64.fill(0, u_next_ptr / 8, u_next_ptr / 8 + (nx * ny));
+        // update canvas view
+        wasmCanvasView = new Float64Array(Module.HEAPF64.buffer, u_ptr, nx * ny);
+      } else {
+        // create emxArray (assumes Emscripten-compiled emx functions exist)
+        const dimsPtr = Module._malloc(2 * 4);
+        Module.HEAP32[dimsPtr >> 2] = nx;
+        Module.HEAP32[(dimsPtr >> 2) + 1] = ny;
+        wasmState.u = Module._emxCreateND_real_T(2, dimsPtr);
+        wasmState.u_prev = Module._emxCreateND_real_T(2, dimsPtr);
+        wasmState.u_next = Module._emxCreateND_real_T(2, dimsPtr);
+        Module._free(dimsPtr);
+
+        const u_ptr = Module.getValue(wasmState.u, '*');
+        const u_prev_ptr = Module.getValue(wasmState.u_prev, '*');
+        const u_next_ptr = Module.getValue(wasmState.u_next, '*');
+
+        Module.HEAPF64.set(temp_u, u_ptr / 8);
+        Module.HEAPF64.fill(0, u_prev_ptr / 8, u_prev_ptr / 8 + (nx * ny));
+        Module.HEAPF64.fill(0, u_next_ptr / 8, u_next_ptr / 8 + (nx * ny));
+
+        wasmCanvasView = new Float64Array(Module.HEAPF64.buffer, u_ptr, nx * ny);
+      }
+    }
+
+    // ----------------------
+    // Independent loops
+    // ----------------------
+    // JS loop via requestAnimationFrame
+    function animateJS() {
+      if (!jsRunning) { jsAnimationId = null; return; }
+      const t0 = performance.now();
+      const next = stepJS(jsState.u, jsState.u_prev, jsState.u_next);
+      jsState.u = next[0]; jsState.u_prev = next[1]; jsState.u_next = next[2];
+      const t1 = performance.now();
+      drawCanvas(jsState.u, jsCanvas.img, jsCanvas.ctx);
+      document.getElementById("timeJS").textContent = (t1 - t0).toFixed(4);
+      jsAnimationId = requestAnimationFrame(animateJS);
+    }
+
+    // WASM loop via setTimeout (independent scheduling)
+    function animateWASM_loop() {
+      if (!wasmRunning) { wasmTimerId = null; return; }
+      if (!(wasmState.u && wasmState.u_prev && wasmState.u_next)) {
+        // not ready yet
+        wasmTimerId = setTimeout(animateWASM_loop, wasmInterval || 1);
+        return;
+      }
+      const t0 = performance.now();
+      // call wasm function (expects emxArray pointers)
+      Module._wave2D_step(wasmState.u, wasmState.u_prev, c, dt, dx, dy, damping, wasmState.u_next);
+      // rotate pointers in JS side to match u_next -> u, u -> u_prev, u_prev -> u_next
+      const tmp = wasmState.u;
+      wasmState.u = wasmState.u_next;
+      wasmState.u_next = wasmState.u_prev;
+      wasmState.u_prev = tmp;
+
+      const t1 = performance.now();
+
+      // draw from wasmCanvasView (which points to current u data)
+      // NOTE: wasmCanvasView must be re-created when wasmState.u changes pointer.
+      // Recreate view from current wasmState.u data pointer:
+      const u_ptr = Module.getValue(wasmState.u, '*');
+      wasmCanvasView = new Float64Array(Module.HEAPF64.buffer, u_ptr, nx * ny);
+
+      drawCanvas(wasmCanvasView, wasmCanvas.img, wasmCanvas.ctx);
+      document.getElementById("timeWASM").textContent = (t1 - t0).toFixed(4);
+
+      // schedule next run independently of requestAnimationFrame
+      wasmTimerId = setTimeout(animateWASM_loop, wasmInterval);
+    }
+
+    // ----------------------
+    // Buttons
+    // ----------------------
+    document.getElementById("resetJS").onclick = () => {
+      jsState = initJSArrays();
+      if (!jsRunning) { jsRunning = true; animateJS(); }
+    };
+    document.getElementById("stopJS").onclick = () => {
+      jsRunning = !jsRunning;
+      if (jsRunning && !jsAnimationId) animateJS();
+    };
+
+    document.getElementById("resetWASM").onclick = () => {
+      initWasmArrays();
+      if (!wasmRunning) { wasmRunning = true; animateWASM_loop(); }
+    };
+    document.getElementById("stopWASM").onclick = () => {
+      wasmRunning = !wasmRunning;
+      if (wasmRunning && !wasmTimerId) animateWASM_loop();
+    };
+
+    // ----------------------
+    // Start when Module is ready
+    // ----------------------
+    Module.onRuntimeInitialized = () => {
+      // initialize wasm arrays (allocs or resets) — uses Module APIs
+      initWasmArrays();
+
+      // start JS loop (immediately)
+      if (!jsAnimationId) animateJS();
+
+      // start WASM loop with a small stagger so it doesn't start exactly same tick
+      if (!wasmTimerId) setTimeout(animateWASM_loop, 50);
+    };
+
+    // Optional: allow changing wasmInterval via console
+    window.setWasmInterval = (ms) => { wasmInterval = Math.max(0, ms|0); console.log("wasmInterval =", wasmInterval); };
+
+  </script>
+</body>
+
+</html>
