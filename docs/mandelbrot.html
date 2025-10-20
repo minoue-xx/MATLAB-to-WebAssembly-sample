@@ -1,0 +1,163 @@
+<!--
+Copyright (c) 2025 Michio Inoue
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>JS vs WASM マンデルブロ集合</title>
+<style>
+body { text-align:center; background:#222; color:#fff; font-family:sans-serif; }
+canvas { border:1px solid #000; margin-top:20px; }
+button { padding:5px 10px; font-size:16px; margin-top:10px; }
+input[type=range] { width:300px; }
+.controls { margin-top:10px; }
+</style>
+</head>
+<body>
+
+<h1>JS vs WASM マンデルブロ集合</h1>
+
+<canvas id="canvas" width="600" height="400"></canvas>
+
+<div class="controls">
+<label for="maxIterRange">最大反復数: <span id="maxIterValue">300</span></label><br>
+<input type="range" id="maxIterRange" min="50" max="1000" value="300">
+</div>
+
+<button id="drawJS">計算 (JS)</button>
+<button id="drawWASM">計算 (WASM)</button>
+<p id="timeInfo"></p>
+
+<script src="mandelbrot.js"></script>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const width = canvas.width;
+const height = canvas.height;
+
+const maxIterRange = document.getElementById('maxIterRange');
+const maxIterValue = document.getElementById('maxIterValue');
+maxIterRange.addEventListener('input', ()=>{ maxIterValue.textContent = maxIterRange.value; });
+
+// ---------------- HSL -> RGB ----------------
+function hslToRgb(h,s,l){
+    let r,g,b;
+    if(s===0){r=g=b=l;}
+    else{
+        const hue2rgb=(p,q,t)=>{
+            if(t<0) t+=1;
+            if(t>1) t-=1;
+            if(t<1/6) return p+(q-p)*6*t;
+            if(t<1/2) return q;
+            if(t<2/3) return p+(q-p)*(2/3-t)*6;
+            return p;
+        }
+        const q=l<0.5?l*(1+s):l+s-l*s;
+        const p=2*l-q;
+        r=hue2rgb(p,q,h+1/3);
+        g=hue2rgb(p,q,h);
+        b=hue2rgb(p,q,h-1/3);
+    }
+    return [Math.floor(r*255),Math.floor(g*255),Math.floor(b*255)];
+}
+
+// ---------------- JS版 ----------------
+function calcMandelbrotJS(){
+    const maxIter = parseInt(maxIterRange.value);
+    const centerX = -0.5, centerY = 0, zoom = 1.5;
+
+    const start = performance.now();
+    const result = new Float64Array(width*height);
+
+    for(let px=0;px<width;px++){
+        for(let py=0;py<height;py++){
+            let x0=(px-width/2)/(width/4*zoom)+centerX;
+            let y0=(py-height/2)/(height/4*zoom)+centerY;
+            let x=0,y=0,iter=0;
+            while(x*x+y*y<=4 && iter<maxIter){
+                const xt=x*x-y*y+x0;
+                y=2*x*y+y0;
+                x=xt;
+                iter++;
+            }
+            result[py*width+px] = iter;
+        }
+    }
+    const end = performance.now();
+    return { data: result, time: end-start };
+}
+
+document.getElementById('drawJS').addEventListener('click', ()=>{
+    const {data, time} = calcMandelbrotJS();
+    document.getElementById('timeInfo').textContent = `JS計算時間: ${time.toFixed(1)} ms`;
+
+    // 描画（速度計測外）
+    const imageData = ctx.createImageData(width,height);
+    for(let py=0;py<height;py++){
+        for(let px=0;px<width;px++){
+            const val = data[py*width+px];
+            const hue = val/parseInt(maxIterRange.value);
+            const [r,g,b] = hslToRgb(hue,1,0.5);
+            const idx = 4*(py*width+px);
+            imageData.data[idx]=r;
+            imageData.data[idx+1]=g;
+            imageData.data[idx+2]=b;
+            imageData.data[idx+3]=255;
+        }
+    }
+    ctx.putImageData(imageData,0,0);
+});
+
+// ---------------- WASM版 ----------------
+Module.onRuntimeInitialized = () => {
+  console.log("Runtime initialized ✅");
+
+  const emxCreate = Module._emxCreateND_real_T;
+  const emxDestroy = Module._emxDestroyArray_real_T;
+  const mandelbrot = Module._mandelbrot;
+
+  document.getElementById('drawWASM').addEventListener('click', ()=>{
+    const maxIter = parseInt(maxIterRange.value);
+
+    // dims 配列作成
+    const dimsPtr = Module._malloc(2*4);
+    Module.HEAP32[dimsPtr>>2] = height;
+    Module.HEAP32[(dimsPtr>>2)+1] = width;
+    const imgPtr = emxCreate(2, dimsPtr);
+    Module._free(dimsPtr);
+
+    const start = performance.now();
+    // WASM 側で計算
+    mandelbrot(width,height,maxIter,imgPtr);
+    const end = performance.now();
+
+    // データ取得
+    const dataPtr = Module.getValue(imgPtr, '*');
+    const data = new Float64Array(Module.HEAPF64.buffer, dataPtr, width*height);
+
+    // 描画（速度計測外）
+    const imageData = ctx.createImageData(width,height);
+    for(let py=0;py<height;py++){
+        for(let px=0;px<width;px++){
+            const val = data[py*width+px];
+            const hue = val/maxIter;
+            const [r,g,b] = hslToRgb(hue,1,0.5);
+            const idx = 4*(py*width+px);
+            imageData.data[idx]=r;
+            imageData.data[idx+1]=g;
+            imageData.data[idx+2]=b;
+            imageData.data[idx+3]=255;
+        }
+    }
+    ctx.putImageData(imageData,0,0);
+
+    emxDestroy(imgPtr);
+
+    document.getElementById('timeInfo').textContent = `WASM計算時間: ${(end-start).toFixed(1)} ms`;
+  });
+};
+</script>
+
+</body>
+</html>

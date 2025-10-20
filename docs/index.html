@@ -1,5 +1,5 @@
 <!--
-Copyright (c) 2019 Michio Inoue
+Copyright (c) 2025 Michio Inoue
 -->
 <!doctype html>
 <html lang="en">
@@ -38,7 +38,7 @@ Copyright (c) 2019 Michio Inoue
       <div class="logo">WG</div>
       <div>
         <h1>Demo Index</h1>
-        <p class="lead">Quick entry point for the two demo pages you mentioned. Click a card to open each demo in the same folder.</p>
+        <p class="lead">Quick entry point for the demos pages.</p>
       </div>
     </header>
 
@@ -70,16 +70,26 @@ Copyright (c) 2019 Michio Inoue
         <p style="color:var(--muted);margin:0 0 12px">Experiment with allocation rules, transaction costs, and visualization of rebalancing events.</p>
         <div class="actions">
           <a class="btn" href="optimizePosition.html">Open tool</a>
-          <a class="btn secondary" href="optimizePosition.html#dev">Developer notes</a>
+          <a class="btn secondary" href="optimizePosition.html#notes">Notes</a>
         </div>
       </article>
 
-    </div>
+      <article class="card" role="listitem" aria-labelledby="mandel-title">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <h2 id="mandel-title">JS vs WASM マンデルブロ集合</h2>
+            <div class="meta">マンデルブロ集合を描画して、JavaScript 実装と WebAssembly 実装の速度と品質を比較します。</div>
+          </div>
+          <div class="tag">Graphics</div>
+        </div>
+        <p style="color:var(--muted);margin:0 0 12px">描画設定を変えながら性能ベンチマークを行い、タイミングとピクセル出力の差を確認できます。</p>
+        <div class="actions">
+          <a class="btn" href="mandelbrot.html">Open demo</a>
+          <a class="btn secondary" href="mandelbrot.html#notes">Notes</a>
+        </div>
+      </article>
 
-    <footer>
-      <div>Files assumed to be in the same folder: <strong>waveEquation.html</strong> and <strong>optimizePosition.html</strong>.</div>
-      <div style="margin-top:6px">Want a different layout, thumbnails, or a short README included? Tell me and I'll update the file.</div>
-    </footer>
+      </div>
   </div>
 </body>
 </html>
